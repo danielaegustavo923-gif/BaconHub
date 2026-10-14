@@ -1,7 +1,6 @@
-- Bacon Hub V56.0 (Ultimate Roblox Multi-Game Edition - Elevator Platform Update)
+-- Bacon Hub V100
 -- Supported: sem título sem tag / Catalog Avatar Creator / Murder Mystery 2
--- Xeno Executor Compatibility & UI List Patch Applied
--- Integrated with Bacon Bhop Physics Engine
+-- Combined with Forsaken Advanced Movement Engine
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -27,7 +26,7 @@ local isNoclipActive = false
 local currentSpeed = 100
 local isFlyActive = false
 local currentFlySpeed = 50
-local isBaconBhopActive = false -- ESTADO GLOBAL DO BACON BHOP
+local isForsakenBhopActive = false -- ESTADO PARA CONTROLAR A ENGINE DO FORSAKEN
 
 -- Freecam Fly States
 local FreecamAtivada = false
@@ -92,9 +91,11 @@ local PosicaoOriginal = nil
 local Connections = {}
 
 -- ========================================
--- BACON BHOP ENGINE CONFIGURATION
+-- FORSAKEN MOVEMENT CONFIG & DATA TYPES
 -- ========================================
-local BaconBhopConfig = {
+workspace.Gravity = 100
+
+local ForsakenConfig = {
 	VISUALIZE_FEET_HB = false,
 	VISUALIZE_COLLIDE_AND_SLIDE = false,
 	STEP_OFFSET = 1.2,
@@ -103,49 +104,44 @@ local BaconBhopConfig = {
 	FRICTION = 6,
 	GRAVITY = 10,
 	JUMP_VELOCITY = 30,
-
 	GROUND_ACCEL = 14,
 	GROUND_DECCEL = 10,
 	AIR_ACCEL = 52,
-
 	AIR_SPEED = 50,
 	RUN_SPEED = 40,
 	WALK_SPEED = 20,
 	CROUCH_SPEED = 20,
-
 	AIR_MAX_SPEED = math.huge,
 	AIR_MAX_SPEED_FRIC = 300,
 	AIR_MAX_SPEED_FRIC_DEC = .5,
-
 	LEG_HEIGHT = 1.9+.3,
 	TORSO_TO_FEET = 3.1+1.9,
 	FEET_HB_SIZE = Vector3.new(1,0.1,1),
 	TORSO_HB_SIZE = Vector3.new(3,1,3),
 	FOOT_OFFSET_AMOUNT = 1.2,
-
 	MIN_SLOPE_ANGLE = 45,
 	MAX_SLOPE_ANGLE = 80,
 }
 
-local bhopIds = {
+local soundIds = {
 	"rbxassetid://7338942417",
 	"rbxassetid://7338942345",
 	"rbxassetid://7338942259",
 	"rbxassetid://7338942180",
 	"rbxassetid://7338942417",
 }
-local bhopSounds = {}
-for _, i in ipairs(bhopIds) do
+local forsakenSounds = {}
+for _, id in ipairs(soundIds) do
 	local sound = Instance.new("Sound")
-	sound.SoundId = i
+	sound.SoundId = id
 	sound.Volume = 2
-	sound.Parent = game.Workspace
-	table.insert(bhopSounds, sound)
+	sound.Parent = workspace
+	table.insert(forsakenSounds, sound)
 end
 
-local BaconBhopMovement = {
-	Keys = {W = 0, S = 0, D = 0, A = 0, Space = 0},
-	states = {grounded = false, air_friction = 0, input_vec = Vector3.zero, surfing = false, jumping = false}
+local ForsakenMovement = {
+    Keys = {W = 0, S = 0, D = 0, A = 0, Space = 0},
+    states = {grounded = false, air_friction = 0, input_vec = Vector3.zero, surfing = false, jumping = false}
 }
 
 local Vec3Mod = {}
@@ -277,13 +273,15 @@ local function go(d, r)
     local rem = uh()
     if not rem then return end
     local p = { Action = "CreateAndWearHumanoidDescription", Properties = dict(d), RigType = r or Enum.HumanoidRigType.R15 }
-    pcall(function() if rem:IsA("RemoteFunction") then rem:InvokeServer(p) else rem:FireServer(p) end end)
+    pcall(function()
+        if rem:IsA("RemoteFunction") then rem:InvokeServer(p) else rem:FireServer(p) end
+    end)
 end
 
 local function roubarSkinDoJogadorSelecionado()
     if not JogadorSelecionado then warn("[Bacon Hub] Nenhum jogador alvo selecionado na lista.") return end
     local d, r = descfrom(JogadorSelecionado)
-if d then go(d, r) print("[Bacon Hub] Skin de " .. JogadorSelecionado.Name .. " roubada com sucesso no Xeno!") else warn("[Bacon Hub] Falha ao extrair dados do personagem.") end
+if d then go(d, r) print("[Bacon Hub] Skin de " .. JogadorSelecionado.Name .. " roubada com sucesso!") else warn("[Bacon Hub] Falha ao extrair dados do personagem.") end
 end
 local function enviarMensagemChat(texto)
 pcall(function()
@@ -336,7 +334,8 @@ local _, visivel = Cam:WorldToViewportPoint(parteAlvo.Position)
 if visivel then
 local dist = (meuHrp.Position - parteAlvo.Position).Magnitude
 if dist <= limiteAlcanceUniversal and dist < menorDistancia then
-menorDistancia = dist melhorAlvo = parteAlvo
+menorDistancia = dist
+melhorAlvo = parteAlvo
 end
 end
 end
@@ -357,324 +356,217 @@ end
 end
 return Color3.fromRGB(0, 255, 0)
 end
-local function encontrarMurderNoServidor()
-for _, p in pairs(Players:GetPlayers()) do
-if p ~= LocalPlayer and obterCorDaFuncaoMM2(p) == Color3.fromRGB(255, 0, 0) then return p end
-end
-return nil
-end
-local function localizarArmaDropada()
-local g = workspace:FindFirstChild("GunDrop")
-if g and g:IsA("Part") then return g end
-for _, obj in ipairs(workspace:GetDescendants()) do
-if obj.Name == "GunDrop" and obj:IsA("Part") then return obj end
-end
-return nil
-end
-local function obterMoedaMaisProxima()
-local menorDistancia = math.huge
-local melhorMoeda = nil
-local meuChar = LocalPlayer.Character
-local mHrp = meuChar and meuChar:FindFirstChild("HumanoidRootPart")
-if not mHrp then return nil end
-for _, obj in ipairs(workspace:GetDescendants()) do
-if (obj.Name == "Coin" or obj.Name == "Gold") and obj:IsA("BasePart") then
-local dist = (mHrp.Position - obj.Position).Magnitude
-if dist < menorDistancia then menorDistancia = dist melhorMoeda = obj end
-end
-end
-return melhorMoeda
-end
-local function obterAlvoParaMurder()
-local menorDistancia = math.huge
-local melhorAlvoInocente = nil
-local meuChar = LocalPlayer.Character
-local meuHrp = meuChar and meuChar:FindFirstChild("HumanoidRootPart")
-if not meuHrp then return nil end
-for _, p in pairs(Players:GetPlayers()) do
-if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChildOfClass("Humanoid") then
-if p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-local dist = (meuHrp.Position - p.Character.HumanoidRootPart.Position).Magnitude
-if dist < menorDistancia then menorDistancia = dist melhorAlvoInocente = p.Character.HumanoidRootPart end
-end
-end
-end
-return melhorAlvoInocente
-end
-local function calcularRotaPathfinding(destinoPos)
-local agora = os.clock()
-if agora - ultimoCalculoRota < 0.25 then return end
-ultimoCalculoRota = agora
-task.spawn(function()
-local meuChar = LocalPlayer.Character
-local hum = meuChar and meuChar:FindFirstChildOfClass("Humanoid")
-local hrp = meuChar and meuChar:FindFirstChild("HumanoidRootPart")
-if not hum or not hrp then return end
-hum:MoveTo(destinoPos)
-end)
-end
-local function gerenciarHighlightsMM2()
-for _, jogador in pairs(Players:GetPlayers()) do
-if jogador ~= LocalPlayer and jogador.Character then
-local char = jogador.Character
-local hl = char:FindFirstChild("MM2_Highlight")
-if HighlightsMM2Ativado then
-if not hl then hl = Instance.new("Highlight") hl.Name = "MM2_Highlight" hl.Parent = char end
-hl.FillTransparency = 0.5
-local corMM2Role = obterCorDaFuncaoMM2(jogador)
-hl.FillColor = corMM2Role hl.OutlineColor = corMM2Role
-else
-if hl then hl:Destroy() end
-end
-end
-end
-end
-local function obterAlvoAimbotMM2()
-local menorDistancia = math.huge
-local melhorAlvo = nil
-local meuChar = LocalPlayer.Character
-local meuHrp = meuChar and meuChar:FindFirstChild("HumanoidRootPart")
-if not meuHrp then return nil end
-for _, jogador in pairs(Players:GetPlayers()) do
-if jogador ~= LocalPlayer and jogador.Character and jogador.Character:FindFirstChild("Head") then
-local dist = (meuHrp.Position - jogador.Character.Head.Position).Magnitude
-if dist <= limiteAlcanceMM2 and dist < menorDistancia then menorDistancia = dist melhorAlvo = jogador.Character.Head end
-end
-end
-return melhorAlvo
-end
 -- ========================================
--- BACON BHOP MATH ENGINE OPERATIONS
+-- FORSAKEN MATH ENGINE OPERATIONS
 -- ========================================
 local function flattenVectorAgainstWall(moveVector, normal)
-	if moveVector.Magnitude == 0 and normal.Magnitude == 0 then return Vector3.zero end
-	normal = normal.Unit
-	local reflected = moveVector - 2 * moveVector:Dot(normal) * normal
-	local parallel = moveVector + reflected
-	if parallel.Magnitude == 0 then return Vector3.zero end
-	return parallel.Unit:Dot(moveVector.Unit) * parallel.Unit * moveVector.Magnitude
+if moveVector.Magnitude == 0 and normal.Magnitude == 0 then return Vector3.zero end
+normal = normal.Unit
+local reflected = moveVector - 2 * moveVector:Dot(normal) * normal
+local parallel = moveVector + reflected
+if parallel.Magnitude == 0 then return Vector3.zero end
+return parallel.Unit:Dot(moveVector.Unit) * parallel.Unit * moveVector.Magnitude
 end
-
-function BaconBhopMovement:CollideAndSlide(wishedSpeed)
-	if wishedSpeed.Magnitude == 0 then return wishedSpeed end
-	local inputVec = self.states.input_vec
-	local newSpeed = wishedSpeed
-	local hrp = LocalPlayer.Character.HumanoidRootPart
-	local params = RaycastParams.new()
-	params.FilterDescendantsInstances = {LocalPlayer.Character, Cam}
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.CollisionGroup = "PlayerMovement"
-
-	wishedSpeed *= 2
-	local dirAmnt = 1.375
-	local mainDirAmnt = 1.55
-	local isSticking = false
-	local partsAlreadyHit = {}
-
-	local lookVecs = { Vector3.new(0, (-BaconBhopConfig.TORSO_TO_FEET) + BaconBhopConfig.STEP_OFFSET, 0), Vector3.new(0, 0, 0), Vector3.new(0, 2, 0) }
-
-	for _, v in pairs(lookVecs) do
-		local values = {}
-		local hval = {}
-		local currForDir, currSideDir
-		local rayPos = hrp.Position + v
-
-		if inputVec.X > 0 then
-			currForDir = hrp.CFrame.RightVector table.insert(values, currForDir)
-			table.insert(hval, hrp.CFrame.LookVector * dirAmnt) table.insert(hval, -hrp.CFrame.LookVector * dirAmnt)
-		elseif inputVec.X < 0 then
-			currForDir = -hrp.CFrame.RightVector table.insert(values, currForDir)
-			table.insert(hval, hrp.CFrame.LookVector * dirAmnt) table.insert(hval, -hrp.CFrame.LookVector * dirAmnt)
-		end
-
-		if inputVec.Z > 0 then
-			currSideDir = -hrp.CFrame.LookVector table.insert(values, currSideDir)
-			table.insert(hval, hrp.CFrame.RightVector * dirAmnt) table.insert(hval, -hrp.CFrame.RightVector * dirAmnt)
-		elseif inputVec.Z < 0 then
-			currSideDir = hrp.CFrame.LookVector table.insert(values, currSideDir)
-			table.insert(hval, hrp.CFrame.RightVector * dirAmnt) table.insert(hval, -hrp.CFrame.RightVector * dirAmnt)
-		end
-
-		if inputVec.Z == 0 and inputVec.X == 0 then
-			values[1] = wishedSpeed.Unit
-			table.insert(hval, CFrame.new(wishedSpeed.Unit).RightVector * dirAmnt) table.insert(hval, -CFrame.new(wishedSpeed.Unit).RightVector * dirAmnt)
-		else
-			table.insert(values, wishedSpeed.Unit * dirAmnt)
-		end
-
-		if currForDir and currSideDir then
-			for a, b in pairs(values) do values[a] = b * mainDirAmnt end
-			table.insert(values, (currForDir+currSideDir) * mainDirAmnt)
-		else
-			values[1] *= mainDirAmnt
-			table.insert(values, (values[1] + hval[1]).Unit * mainDirAmnt)
-			table.insert(values, (values[1] + hval[2]).Unit * mainDirAmnt)
-			table.insert(values, hval[1]) table.insert(values, hval[2])
-		end
-
-		for _, b in pairs(values) do
-			if not b then continue end
-			local result = workspace:Raycast(rayPos, b, params)
-			if not result then continue end
-			if table.find(partsAlreadyHit, result.Instance) then continue end
-			table.insert(partsAlreadyHit, result.Instance)
-
-			local _v =  newSpeed.Unit * result.Normal
-			for _, c in pairs({_v.X, _v.Y, _v.Z}) do if math.abs(c) > 0 then _v = c break end end
-			if type(_v) == "number" and _v > 0 then continue end
-
-			isSticking = true
-			newSpeed = flattenVectorAgainstWall(newSpeed, result.Normal)
-			newSpeed -= result.Instance.Velocity
-			self.mover.PlaneVelocity = Vector2.new(newSpeed.X, newSpeed.Z)
-		end
-	end
-	return newSpeed
+local function forsakenCollideAndSlide(wishedSpeed)
+if wishedSpeed.Magnitude == 0 then return wishedSpeed end
+local inputVec = ForsakenMovement.states.input_vec
+local newSpeed = wishedSpeed
+local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+if not hrp then return wishedSpeed end
+local params = RaycastParams.new()
+params.FilterDescendantsInstances = {LocalPlayer.Character, Cam}
+params.FilterType = Enum.RaycastFilterType.Exclude
+params.CollisionGroup = "PlayerMovement"
+wishedSpeed *= 2
+local dirAmnt = 1.375
+local mainDirAmnt = 1.55
+local isSticking = false
+local partsAlreadyHit = {}
+local lookVecs = { Vector3.new(0, (-ForsakenConfig.TORSO_TO_FEET) + ForsakenConfig.STEP_OFFSET, 0), Vector3.new(0, 0, 0), Vector3.new(0, 2, 0) }
+for _, v in pairs(lookVecs) do
+local values = {}
+local hval = {}
+local currForDir, currSideDir
+local rayPos = hrp.Position + v
+if inputVec.X > 0 then
+currForDir = hrp.CFrame.RightVector table.insert(values, currForDir)
+table.insert(hval, hrp.CFrame.LookVector * dirAmnt) table.insert(hval, -hrp.CFrame.LookVector * dirAmnt)
+elseif inputVec.X < 0 then
+currForDir = -hrp.CFrame.RightVector table.insert(values, currForDir)
+table.insert(hval, hrp.CFrame.LookVector * dirAmnt) table.insert(hval, -hrp.CFrame.LookVector * dirAmnt)
 end
-
-local function baconIsGrounded(dir)
-	local params = RaycastParams.new()
-	params.FilterDescendantsInstances = {LocalPlayer.Character, Cam}
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.CollisionGroup = "PlayerMovement"
-
-	local hrp = BaconBhopMovement.collider
-	local cf = CFrame.new(hrp.Position) - Vector3.new(0, hrp.Size.Y/2, 0)
-	dir = dir or Vector3.new(0,-1 * hrp.Size.Y-BaconBhopConfig.FOOT_OFFSET_AMOUNT,0)
-
-	local result = workspace:Blockcast(cf, BaconBhopConfig.FEET_HB_SIZE, dir, params)
-	if not result or not result.Normal then return false end
-
-	local steepness = math.deg(math.acos(result.Normal:Dot(Vector3.yAxis)))
-	if type(steepness) ~= "number" or steepness ~= steepness then return false end
-
-	local isSurfing = steepness >= BaconBhopConfig.MIN_SLOPE_ANGLE and steepness <= BaconBhopConfig.MAX_SLOPE_ANGLE
-	if isSurfing then return false, true, result, steepness end
-	return true, false, result
+if inputVec.Z > 0 then
+currSideDir = -hrp.CFrame.LookVector table.insert(values, currSideDir)
+table.insert(hval, hrp.CFrame.RightVector * dirAmnt) table.insert(hval, -hrp.CFrame.RightVector * dirAmnt)
+elseif inputVec.Z < 0 then
+currSideDir = hrp.CFrame.LookVector table.insert(values, currSideDir)
+table.insert(hval, hrp.CFrame.RightVector * dirAmnt) table.insert(hval, -hrp.CFrame.RightVector * dirAmnt)
 end
-
-local function baconGetMovementDirection(groundNormal)
-	local forward = BaconBhopMovement.Keys.W + -BaconBhopMovement.Keys.S
-	local side = BaconBhopMovement.Keys.A + -BaconBhopMovement.Keys.D
-	groundNormal = groundNormal or Vector3.new(0,1,0)
-
-	if forward == 0 and side == 0 then
-		BaconBhopMovement.states.input_vec = Vector3.zero return Vector3.zero
-	else
-		BaconBhopMovement.states.input_vec = Vector3.new(-side, 0, -forward).Unit
-		local forwardMove = groundNormal:Cross(BaconBhopMovement.collider.CFrame.RightVector)
-		local sideMove = groundNormal:Cross(forwardMove)
-		return (forwardMove * forward + sideMove * side).Unit
-	end
-end
-
-local function baconClipVelocity(input, normal, output, overbounce)
-	local angle = normal.Y
-	local blocked = 0
-	if angle > 0 then blocked = 1 end
-	if angle == 0 then blocked = 2 end
-	local backoff = input:Dot(normal) * overbounce
-
-	local coords = {"X", "Y", "Z"}
-	for i = 1, 3 do local ci = coords[i] output[ci] = input[ci] - (normal[ci] * backoff) end
-	local adjust = output:ToVector3():Dot(normal)
-	if adjust < 0 then output = output:ToVector3() - (normal * adjust) end
-	return blocked
-end
-
-local function baconTraceReflect(velocity, origin)
-	local endp = origin + (velocity * BaconBhopMovement.dt)
-	local isGrounded, isSurfing, hit = baconIsGrounded(velocity.Unit * ((origin - endp).Magnitude + 0.1))
-	if hit then
-		local output = Vec3Mod.new(velocity)
-		baconClipVelocity(velocity, hit.Normal, output, 1) return output:ToVector3(), 1
-	end
-	return velocity, 0
-end
-
-local function baconApplyFriction(modifier, inAir)
-	local vel = inAir and BaconBhopMovement.collider.Velocity or Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, 0, BaconBhopMovement.mover.PlaneVelocity.Y)
-	local speed = vel.Magnitude
-	modifier = modifier or 1
-	if speed <= 0 then return vel end
-
-	if not inAir and BaconBhopMovement.states.input_vec.Magnitude > 0 and speed > 30 then return vel end
-	if not inAir and BaconBhopMovement.states.input_vec.Magnitude == 0 and modifier == 1 then modifier = 8 end
-
-	local fric = inAir and BaconBhopConfig.AIR_FRICTION or BaconBhopConfig.FRICTION
-	local control = speed < BaconBhopConfig.GROUND_DECCEL and BaconBhopConfig.GROUND_DECCEL or speed
-	local drop = control * fric * BaconBhopMovement.dt * modifier
-	if type(drop) ~= "number" then drop = drop.Magnitude end
-
-	local newSpeed = math.max(speed - drop, 0)
-	if not inAir and BaconBhopMovement.states.input_vec.Magnitude > 0 then newSpeed = math.max(newSpeed, 30) end
-	if speed > 0 and newSpeed > 0 then newSpeed /= speed end
-	vel *= newSpeed
-	BaconBhopMovement.mover.PlaneVelocity = Vector2.new(vel.X, vel.Z)
-end
-
-local function baconApplyGroundVelocity(groundNormal)
-	local wishDir = baconGetMovementDirection(groundNormal)
-	local wishSpeed = wishDir.Magnitude * BaconBhopConfig.RUN_SPEED
-	local currentGroundSpeed = Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, 0, BaconBhopMovement.mover.PlaneVelocity.Y).Magnitude
-
-	if BaconBhopMovement.states.air_friction > 0 and currentGroundSpeed < 5 and wishDir.Magnitude == 0 then
-		BaconBhopMovement.states.air_friction = 0
-	end
-	if BaconBhopMovement.states.air_friction <= 0 then baconApplyFriction(1, false)
-	else
-		local sub = BaconBhopConfig.AIR_MAX_SPEED_FRIC_DEC * BaconBhopMovement.dt * 60
-		local curr = BaconBhopMovement.states.air_friction
-		local fric = curr - sub
-		baconApplyFriction(math.max(1, fric/BaconBhopConfig.FRICTION), false)
-		BaconBhopMovement.states.air_friction = math.max(0, curr - sub)
-	end
-
-	local currentVelocity = Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, 0, BaconBhopMovement.mover.PlaneVelocity.Y)
-	local currentSpeed = currentVelocity:Dot(wishDir)
-	local addSpeed = wishSpeed - currentSpeed
-	if addSpeed > 0 then
-		local accelerationSpeed = math.min(BaconBhopConfig.GROUND_ACCEL * BaconBhopMovement.dt * wishSpeed, addSpeed)
-		local newVelocity = currentVelocity + (accelerationSpeed * wishDir)
-		BaconBhopMovement.mover.PlaneVelocity = Vector2.new(newVelocity.X, newVelocity.Z)
-	end
-	BaconBhopMovement:CollideAndSlide(Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, 0, BaconBhopMovement.mover.PlaneVelocity.Y))
-end
-
-local function baconApplyAirVelocity()
-	local vel = Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, 0, BaconBhopMovement.mover.PlaneVelocity.Y)
-	local wishDir = baconGetMovementDirection(Vector3.new(0,1,0))
-	local wishSpeed = wishDir.Magnitude * BaconBhopConfig.AIR_SPEED
-	if vel.Magnitude > BaconBhopConfig.AIR_MAX_SPEED then BaconBhopMovement.states.air_friction = BaconBhopConfig.AIR_MAX_SPEED_FRIC end
-
-	if BaconBhopMovement.states.air_friction > 0 and not BaconBhopMovement.states.surfing then baconApplyFriction(0.01 * BaconBhopMovement.states.air_friction, false) end
-
-	local currentVelocity = Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, 0, BaconBhopMovement.mover.PlaneVelocity.Y)
-	local currentSpeed = currentVelocity:Dot(wishDir)
-	local addSpeed = wishSpeed - currentSpeed
-	if addSpeed > 0 then
-		local accelerationSpeed = math.min(BaconBhopConfig.AIR_ACCEL * BaconBhopMovement.dt * wishSpeed, addSpeed)
-		local newVelocity = currentVelocity + (accelerationSpeed * wishDir)
-		BaconBhopMovement.mover.PlaneVelocity = Vector2.new(newVelocity.X, newVelocity.Z)
-	end
-
-	local refVel = Vector3.new(BaconBhopMovement.mover.PlaneVelocity.X, BaconBhopMovement.collider.Velocity.Y, BaconBhopMovement.mover.PlaneVelocity.Y)
-	local reflected = baconTraceReflect(refVel, BaconBhopMovement.collider.Position)
-BaconBhopMovement.mover.PlaneVelocity = Vector2.new(reflected.X, reflected.Z)
-end
-local function initBaconEngine()
-BaconBhopMovement.collider = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
-local mover = BaconBhopMovement.collider:FindFirstChild("BaconMoverAttachment")
-if not mover then
-local a0 = Instance.new("Attachment", BaconBhopMovement.collider)
-a0.Name = "BaconMoverAttachment"
-local lm = Instance.new("LinearVelocity", BaconBhopMovement.collider)
-lm.Name = "BaconLinearMover" lm.Attachment0 = a0 lm.MaxForce = 10000000
-lm.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
-lm.PrimaryTangentAxis = Vector3.new(1,0,0) lm.SecondaryTangentAxis = Vector3.new(0,0,1)
-BaconBhopMovement.mover = lm
+if inputVec.Z == 0 and inputVec.X == 0 then
+values = wishedSpeed.Unit
+table.insert(hval, CFrame.new(wishedSpeed.Unit).RightVector * dirAmnt) table.insert(hval, -CFrame.new(wishedSpeed.Unit).RightVector * dirAmnt)
 else
-BaconBhopMovement.mover = BaconBhopMovement.collider:FindFirstChild("BaconLinearMover")
+table.insert(values, wishedSpeed.Unit * dirAmnt)
+end
+if currForDir and currSideDir then
+for a, b in pairs(values) do values[a] = b * mainDirAmnt end
+table.insert(values, (currForDir+currSideDir) * mainDirAmnt)
+else
+values *= mainDirAmnt
+table.insert(values, (values + hval).Unit * mainDirAmnt)
+table.insert(values, (values + hval).Unit * mainDirAmnt)
+table.insert(values, hval) table.insert(values, hval)
+end
+for _, b in pairs(values) do
+if not b then continue end
+local result = workspace:Raycast(rayPos, b, params)
+if not result then continue end
+if table.find(partsAlreadyHit, result.Instance) then continue end
+table.insert(partsAlreadyHit, result.Instance)
+local _v =  newSpeed.Unit * result.Normal
+for _, c in pairs({_v.X, _v.Y, _v.Z}) do if math.abs(c) > 0 then _v = c break end end
+if type(_v) == "number" and _v > 0 then continue end
+isSticking = true
+newSpeed = flattenVectorAgainstWall(newSpeed, result.Normal)
+newSpeed -= result.Instance.Velocity
+if ForsakenMovement.mover then ForsakenMovement.mover.PlaneVelocity = Vector2.new(newSpeed.X, newSpeed.Z) end
+end
+end
+return newSpeed
+end
+local function forsakenIsGrounded(dir)
+local params = RaycastParams.new()
+params.FilterDescendantsInstances = {LocalPlayer.Character, Cam}
+params.FilterType = Enum.RaycastFilterType.Exclude
+params.CollisionGroup = "PlayerMovement"
+local hrp = ForsakenMovement.collider
+if not hrp then return false end
+local cf = CFrame.new(hrp.Position) - Vector3.new(0, hrp.Size.Y/2, 0)
+dir = dir or Vector3.new(0, -1 * hrp.Size.Y - ForsakenConfig.FOOT_OFFSET_AMOUNT, 0)
+local result = workspace:Blockcast(cf, ForsakenConfig.FEET_HB_SIZE, dir, params)
+if not result or not result.Normal then return false end
+local steepness = math.deg(math.acos(result.Normal:Dot(Vector3.yAxis)))
+if type(steepness) ~= "number" or steepness ~= steepness then return false end
+local isSurfing = steepness >= ForsakenConfig.MIN_SLOPE_ANGLE and steepness <= ForsakenConfig.MAX_SLOPE_ANGLE
+if isSurfing then return false, true, result, steepness end
+return true, false, result
+end
+local function forsakenGetMovementDirection(groundNormal)
+local forward = ForsakenMovement.Keys.W + -ForsakenMovement.Keys.S
+local side = ForsakenMovement.Keys.A + -ForsakenMovement.Keys.D
+groundNormal = groundNormal or Vector3.new(0,1,0)
+if forward == 0 and side == 0 then
+ForsakenMovement.states.input_vec = Vector3.zero
+return Vector3.zero
+else
+ForsakenMovement.states.input_vec = Vector3.new(-side, 0, -forward).Unit
+local forwardMove = groundNormal:Cross(ForsakenMovement.collider.CFrame.RightVector)
+local sideMove = groundNormal:Cross(forwardMove)
+return (forwardMove * forward + sideMove * side).Unit
+end
+end
+local function forsakenClipVelocity(input, normal, output, overbounce)
+local angle = normal.Y
+local blocked = 0
+if angle > 0 then blocked = 1 end
+if angle == 0 then blocked = 2 end
+local backoff = input:Dot(normal) * overbounce
+local coords = {"X", "Y", "Z"}
+for i = 1, 3 do
+local ci = coords[i]
+output[ci] = input[ci] - (normal[ci] * backoff)
+end
+local adjust = output:ToVector3():Dot(normal)
+if adjust < 0 then output = output:ToVector3() - (normal * adjust) end
+return blocked
+end
+local function forsakenTraceReflect(velocity, origin)
+local endp = origin + (velocity * ForsakenMovement.dt)
+local isGrounded, isSurfing, hit = forsakenIsGrounded(velocity.Unit * ((origin - endp).Magnitude + 0.1))
+if hit then
+local output = Vec3Mod.new(velocity)
+forsakenClipVelocity(velocity, hit.Normal, output, 1)
+return output:ToVector3(), 1
+end
+return velocity, 0
+end
+local function forsakenApplyFriction(modifier, inAir)
+local vel = inAir and ForsakenMovement.collider.Velocity or Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, 0, ForsakenMovement.mover.PlaneVelocity.Y)
+local speed = vel.Magnitude
+modifier = modifier or 1
+if speed <= 0 then return vel end
+if not inAir and ForsakenMovement.states.input_vec.Magnitude > 0 and speed > 30 then return vel end
+if not inAir and ForsakenMovement.states.input_vec.Magnitude == 0 and modifier == 1 then modifier = 8 end
+local fric = inAir and ForsakenConfig.AIR_FRICTION or ForsakenConfig.FRICTION
+local control = speed < ForsakenConfig.GROUND_DECCEL and ForsakenConfig.GROUND_DECCEL or speed
+local drop = control * fric * ForsakenMovement.dt * modifier
+if type(drop) ~= "number" then drop = drop.Magnitude end
+local newSpeed = math.max(speed - drop, 0)
+if not inAir and ForsakenMovement.states.input_vec.Magnitude > 0 then newSpeed = math.max(newSpeed, 30) end
+if speed > 0 and newSpeed > 0 then newSpeed /= speed end
+vel *= newSpeed
+ForsakenMovement.mover.PlaneVelocity = Vector2.new(vel.X, vel.Z)
+end
+local function forsakenApplyGroundVelocity(groundNormal)
+local wishDir = forsakenGetMovementDirection(groundNormal)
+local wishSpeed = wishDir.Magnitude * ForsakenConfig.RUN_SPEED
+local currentGroundSpeed = Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, 0, ForsakenMovement.mover.PlaneVelocity.Y).Magnitude
+if ForsakenMovement.states.air_friction > 0 and currentGroundSpeed < 5 and wishDir.Magnitude == 0 then
+ForsakenMovement.states.air_friction = 0
+end
+if ForsakenMovement.states.air_friction <= 0 then
+forsakenApplyFriction(1, false)
+else
+local sub = ForsakenConfig.AIR_MAX_SPEED_FRIC_DEC * ForsakenMovement.dt * 60
+local curr = ForsakenMovement.states.air_friction
+local fric = curr - sub
+forsakenApplyFriction(math.max(1, fric/ForsakenConfig.FRICTION), false)
+ForsakenMovement.states.air_friction = math.max(0, curr - sub)
+end
+local currentVelocity = Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, 0, ForsakenMovement.mover.PlaneVelocity.Y)
+local currentSpeed = currentVelocity:Dot(wishDir)
+local addSpeed = wishSpeed - currentSpeed
+if addSpeed > 0 then
+local accelerationSpeed = math.min(ForsakenConfig.GROUND_ACCEL * ForsakenMovement.dt * wishSpeed, addSpeed)
+local newVelocity = currentVelocity + (accelerationSpeed * wishDir)
+ForsakenMovement.mover.PlaneVelocity = Vector2.new(newVelocity.X, newVelocity.Z)
+end
+forsakenCollideAndSlide(Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, 0, ForsakenMovement.mover.PlaneVelocity.Y))
+end
+local function forsakenApplyAirVelocity()
+local vel = Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, 0, ForsakenMovement.mover.PlaneVelocity.Y)
+local wishDir = forsakenGetMovementDirection(Vector3.new(0,1,0))
+local wishSpeed = wishDir.Magnitude * ForsakenConfig.AIR_SPEED
+if vel.Magnitude > ForsakenConfig.AIR_MAX_SPEED then ForsakenMovement.states.air_friction = ForsakenConfig.AIR_MAX_SPEED_FRIC end
+if ForsakenMovement.states.air_friction > 0 and not ForsakenMovement.states.surfing then forsakenApplyFriction(0.01 * ForsakenMovement.states.air_friction, false) end
+local currentVelocity = Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, 0, ForsakenMovement.mover.PlaneVelocity.Y)
+local currentSpeed = currentVelocity:Dot(wishDir)
+local addSpeed = wishSpeed - currentSpeed
+if addSpeed > 0 then
+local accelerationSpeed = math.min(ForsakenConfig.AIR_ACCEL * ForsakenMovement.dt * wishSpeed, addSpeed)
+local newVelocity = currentVelocity + (accelerationSpeed * wishDir)
+ForsakenMovement.mover.PlaneVelocity = Vector2.new(newVelocity.X, newVelocity.Z)
+end
+local refVel = Vector3.new(ForsakenMovement.mover.PlaneVelocity.X, ForsakenMovement.collider.Velocity.Y, ForsakenMovement.mover.PlaneVelocity.Y)
+local reflected = forsakenTraceReflect(refVel, ForsakenMovement.collider.Position)
+ForsakenMovement.mover.PlaneVelocity = Vector2.new(reflected.X, reflected.Z)
+end
+local function initForsakenEngine()
+ForsakenMovement.collider = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+local mover = ForsakenMovement.collider:FindFirstChild("ForsakenMoverAttachment")
+if not mover then
+local a0 = Instance.new("Attachment", ForsakenMovement.collider)
+a0.Name = "ForsakenMoverAttachment"
+local lm = Instance.new("LinearVelocity", ForsakenMovement.collider)
+lm.Name = "ForsakenLinearMover"
+lm.Attachment0 = a0
+lm.MaxForce = 10000000
+lm.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+lm.PrimaryTangentAxis = Vector3.new(1,0,0)
+lm.SecondaryTangentAxis = Vector3.new(0,0,1)
+ForsakenMovement.mover = lm
+else
+ForsakenMovement.mover = ForsakenMovement.collider:FindFirstChild("ForsakenLinearMover")
 end
 end
 -- ========================================
@@ -875,7 +767,7 @@ end
 -- INITIALIZING TABS & COMPONENTS
 -- ========================================
 local mainPage = createTab("Main / Movement")
-local bhopPage = createTab("Bacon Bhop") -- RENOMEADO PARA BACON BHOP
+local forsakenPage = createTab("Forsaken Bhop")
 local combatPage = createTab("Combat / Hitbox")
 local universalAimbotPage = createTab("Universal Aimbot")
 local waypointPage = createTab("Waypoints")
@@ -928,15 +820,15 @@ else
 if PlataformaObjeto then PlataformaObjeto:Destroy() PlataformaObjeto = nil end
 end
 end)
--- Bacon Bhop Interface
-createSection(bhopPage, "Bacon Advanced Physics Engine")
-createToggle(bhopPage, "Enable Bacon Bhop Physics", false, function(toggled)
-isBaconBhopActive = toggled
+-- Forsaken Category Interface
+createSection(forsakenPage, "Forsaken Advanced Physics Engine")
+createToggle(forsakenPage, "Enable Forsaken Physics", false, function(toggled)
+isForsakenBhopActive = toggled
 if toggled then
-initBaconEngine()
-if BaconBhopMovement.mover then BaconBhopMovement.mover.Enabled = true end
+initForsakenEngine()
+if ForsakenMovement.mover then ForsakenMovement.mover.Enabled = true end
 else
-if BaconBhopMovement.mover then BaconBhopMovement.mover.Enabled = false end
+if ForsakenMovement.mover then ForsakenMovement.mover.Enabled = false end
 local hum = getHumanoid() if hum then hum.PlatformStand = false end
 end
 end)
@@ -1043,11 +935,12 @@ end)
 Connections.PlayerAddedTP = Players.PlayerAdded:Connect(atualizarListaJogadoresTP)
 Connections.PlayerRemovingTP = Players.PlayerRemoving:Connect(atualizarListaJogadoresTP)
 atualizarListaJogadoresTP()
--- MM2 Vision & Bots Page Content
+-- MM2 Vision Page Content
 createSection(mm2Page, "Murder Mystery 2 Tracking")
 createToggle(mm2Page, "Enable Camera Aimbot Lock", false, function(toggled) MasterMM2Aimbot = toggled end)
 createToggle(mm2Page, "ESP Outline (Highlights)", false, function(toggled) HighlightsMM2Ativado = toggled gerenciarHighlightsMM2() end)
 createTextBox(mm2Page, "Max Distance (Studs)", "200", function(text) local num = tonumber(text) if num then limiteAlcanceMM2 = num end end)
+-- Auto Play Page Content
 createSection(autoPlayPage, "MM2 Role Automation")
 createToggle(autoPlayPage, "AI Survivor Bot (Innocent/Sheriff)", false, function(toggled) AutoPlayInocenteAtivado = toggled if not toggled then resetAllHitboxes() end end)
 createToggle(autoPlayPage, "AI Murderer Bot (Hunting Engine)", false, function(toggled) AutoPlayMurderAtivado = toggled end)
@@ -1072,36 +965,21 @@ listLayout.Padding = UDim.new(0, 4)
 listLayout.SortOrder = Enum.SortOrder.Name
 listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 listLayout.Parent = playerListScroll
-listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-playerListScroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
-end)
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() playerListScroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
 local function updatePlayerList()
-for _, child in pairs(playerListScroll:GetChildren()) do
-if child:IsA("TextButton") then child:Destroy() end
-end
+for _, child in pairs(playerListScroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
 for _, player in pairs(Players:GetPlayers()) do
 if player ~= LocalPlayer then
-local pBtn = Instance.new("TextButton")
-pBtn.Size = UDim2.new(0.95, 0, 0, 28)
-pBtn.BackgroundTransparency = 0.5
-pBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-pBtn.Text = player.Name
-pBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-pBtn.Font = Enum.Font.Gotham
-pBtn.TextSize = 12
-pBtn.Parent = playerListScroll
+local pBtn = Instance.new("TextButton") pBtn.Size = UDim2.new(0.95, 0, 0, 28) pBtn.BackgroundTransparency = 0.5 pBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+pBtn.Text = player.Name pBtn.TextColor3 = Color3.fromRGB(255, 255, 255) pBtn.Font = Enum.Font.Gotham pBtn.TextSize = 12 pBtn.Parent = playerListScroll
 Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 4)
 pBtn.MouseButton1Click:Connect(function()
-JogadorSelecionado = player
-statusLabel.Text = "TARGET: " .. player.Name:upper()
-statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+JogadorSelecionado = player statusLabel.Text = "TARGET: " .. player.Name:upper() statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 end)
 end
 end
 end
-stealBtn.MouseButton1Click:Connect(function()
-roubarSkinDoJogadorSelecionado()
-end)
+stealBtn.MouseButton1Click:Connect(function() roubarSkinDoJogadorSelecionado() end)
 Connections.PlayerAddedSteal = Players.PlayerAdded:Connect(updatePlayerList)
 Connections.PlayerRemovingSteal = Players.PlayerRemoving:Connect(updatePlayerList)
 updatePlayerList()
@@ -1137,29 +1015,31 @@ Connections.RenderStepped = RunService.RenderStepped:Connect(function(dt)
 local char = LocalPlayer.Character
 local hrp = char and char:FindFirstChild("HumanoidRootPart")
 local hum = char and char:FindFirstChildOfClass("Humanoid")
--- LOOP DO MOTOR DE FÍSICA DO BACON BHOP (Integrado sem supressões)
-if isBaconBhopActive and hum and hrp and BaconBhopMovement.mover and not FreecamAtivada and not isFlyActive then
-BaconBhopMovement.dt = dt
-local isGrounded, isSurfing, result = baconIsGrounded()
-BaconBhopMovement.states.grounded = isGrounded or false
-BaconBhopMovement.states.surfing = isSurfing or false
-if hrp.AssemblyLinearVelocity.Y < 0 then BaconBhopMovement.states.jumping = false end
+-- ENGINE FORSAKEN SUB-PROCESS LOOPS (Se ativo, gerencia a movimentacao)
+if isForsakenBhopActive and hum and hrp and ForsakenMovement.mover and not FreecamAtivada and not isFlyActive then
+ForsakenMovement.dt = dt
+local isGrounded, isSurfing, result = forsakenIsGrounded()
+ForsakenMovement.states.grounded = isGrounded or false
+ForsakenMovement.states.surfing = isSurfing or false
+if hrp.AssemblyLinearVelocity.Y < 0 then ForsakenMovement.states.jumping = false end
+-- Sincroniza a rotação do boneco com a camera estilo FPS
 local rotationLook = hrp.Position + Cam.CFrame.lookVector
 hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(rotationLook.X, hrp.Position.Y, rotationLook.Z))
 hrp.RotVelocity = Vector3.new()
-if BaconBhopMovement.states.jumping or not BaconBhopMovement.states.grounded then
+if ForsakenMovement.states.jumping or not ForsakenMovement.states.grounded then
 local groundNormal = isSurfing and result.Normal or false
-baconApplyAirVelocity()
-hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, hrp.AssemblyLinearVelocity.Y - (BaconBhopConfig.GRAVITY * dt), hrp.AssemblyLinearVelocity.Z)
-elseif BaconBhopMovement.Keys.Space > 0 then
-bhopSounds[math.random(1, #bhopSounds)]:Play()
-BaconBhopMovement.states.jumping = true
-hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, BaconBhopConfig.JUMP_VELOCITY, hrp.AssemblyLinearVelocity.Z)
-baconApplyAirVelocity()
+forsakenApplyAirVelocity()
+hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, hrp.AssemblyLinearVelocity.Y - (ForsakenConfig.GRAVITY * dt), hrp.AssemblyLinearVelocity.Z)
+elseif ForsakenMovement.Keys.Space > 0 then
+forsakenSounds[math.random(1, #forsakenSounds)]:Play()
+ForsakenMovement.states.jumping = true
+hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, ForsakenConfig.JUMP_VELOCITY, hrp.AssemblyLinearVelocity.Z)
+forsakenApplyAirVelocity()
 else
-baconApplyGroundVelocity(result.Normal)
+forsakenApplyGroundVelocity(result.Normal)
 end
 end
+-- ENGINE LOOP: Nova Movimentação Física da Câmera Livre
 if FreecamAtivada and AncoraFreecam then
 local camMoveVector = Vector3.new(0, 0, 0)
 if UserInputService:IsKeyDown(Enum.KeyCode.W) then camMoveVector = camMoveVector + Cam.CFrame.LookVector end
@@ -1168,82 +1048,12 @@ if UserInputService:IsKeyDown(Enum.KeyCode.A) then camMoveVector = camMoveVector
 if UserInputService:IsKeyDown(Enum.KeyCode.D) then camMoveVector = camMoveVector + Cam.CFrame.RightVector end
 if UserInputService:IsKeyDown(Enum.KeyCode.Space) then camMoveVector = camMoveVector + Vector3.new(0, 1, 0) end
 if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then camMoveVector = camMoveVector - Vector3.new(0, 1, 0) end
-if camMoveVector.Magnitude > 0 then
-AncoraFreecam.CFrame = AncoraFreecam.CFrame + (camMoveVector.Unit * VelocidadeFreecam)
+if camMoveVector.Magnitude > 0 then AncoraFreecam.CFrame = AncoraFreecam.CFrame + (camMoveVector.Unit * VelocidadeFreecam) end
 end
-end
-if isSpeedBoostActive and not isFlyActive and not FreecamAtivada and not isBaconBhopActive then
+if isSpeedBoostActive and not isFlyActive and not FreecamAtivada and not isForsakenBhopActive then
 if hum and hum.WalkSpeed ~= currentSpeed then hum.WalkSpeed = currentSpeed end
 end
 if isFlyActive and hrp and hum and not FreecamAtivada then
 local flyVelocity = Vector3.new(0, 0, 0)
 if UserInputService:IsKeyDown(Enum.KeyCode.W) then flyVelocity = flyVelocity + Cam.CFrame.LookVector end
-if UserInputService:IsKeyDown(Enum.KeyCode.S) then flyVelocity = flyVelocity - Cam.CFrame.LookVector end
-if UserInputService:IsKeyDown(Enum.KeyCode.A) then flyVelocity = flyVelocity - Cam.CFrame.RightVector end
-if UserInputService:IsKeyDown(Enum.KeyCode.D) then flyVelocity = flyVelocity + Cam.CFrame.RightVector end
-hrp.Velocity = flyVelocity.Magnitude > 0 and flyVelocity.Unit * currentFlySpeed or Vector3.new(0,0,0)
-end
-if isExpanded and not AutoPlayInocenteAtivado then
-for _, p in pairs(Players:GetPlayers()) do
-if p ~= LocalPlayer and p.Character then
-local enemyHrp = p.Character:FindFirstChild("HumanoidRootPart")
-if enemyHrp then
-local customBox = p.Character:FindFirstChild("BaconCustomHitbox")
-if not customBox then
-customBox = Instance.new("Part") customBox.Name = "BaconCustomHitbox"
-customBox.Anchored = true customBox.CanCollide = false customBox.Parent = p.Character
-end
-customBox.Size = currentHitboxSize customBox.CFrame = enemyHrp.CFrame
-customBox.Color = currentHitboxColor customBox.Transparency = currentHitboxTransparency
-end
-end
-end
-end
-if MasterUniversalAimbot and AimbotAtivoPorTecla and not FreecamAtivada then
-if AlvoAtualGrudado and (not AlvoAtualGrudado.Parent or AlvoAtualGrudado.Parent:FindFirstChildOfClass("Humanoid").Health <= 0) then AlvoAtualGrudado = nil end
-if not AlvoAtualGrudado then AlvoAtualGrudado = obterAlvoAimbotUniversal() end
-if AlvoAtualGrudado then Cam.CFrame = CFrame.new(Cam.CFrame.Position, AlvoAtualGrudado.Position) end
-end
-if PlataformaAtivada and PlataformaObjeto and hrp then PlataformaObjeto.CFrame = CFrame.new(hrp.Position.X, AlturaPlataforma, hrp.Position.Z) end
-end)
-LocalPlayer.Idled:Connect(function()
-if AntiAFKAtivado then VirtualUser:Button2Down(Vector2.new(0,0), Cam.CFrame) task.wait(1) VirtualUser:Button2Up(Vector2.new(0,0), Cam.CFrame) end
-end)
-Connections.InputBegan = UserInputService.InputBegan:Connect(function(input, gpe)
-if UserInputService:GetFocusedTextBox() then return end
--- MAPEAMENTO DO TECLADO DO MOUSE COMPLETO PARA A ENGINE DE FÍSICA DO BHOP
-if input.KeyCode and BaconBhopMovement.Keys[input.KeyCode.Name] then
-BaconBhopMovement.Keys[input.KeyCode.Name] = 1
-end
-if PlataformaAtivada and PlataformaObjeto then
-if input.KeyCode == Enum.KeyCode.E then
-AlturaPlataforma = AlturaPlataforma + VelocidadeElevador
-elseif input.KeyCode == Enum.KeyCode.Q then
-AlturaPlataforma = AlturaPlataforma - VelocidadeElevador
-end
-end
-if input.KeyCode == Enum.KeyCode.P and UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) and not gpe then
-local novoEstado = not FreecamAtivada
-toggleFreecam(novoEstado)
-pcall(function() freecamToggleSwitch.BackgroundColor3 = novoEstado and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(100, 100, 100) end)
-end
-if input.KeyCode == AimbotKey and not gpe and MasterUniversalAimbot then
-AimbotAtivoPorTecla = not AimbotAtivoPorTecla
-if not AimbotAtivoPorTecla then AlvoAtualGrudado = nil end
-end
-if input.KeyCode == ToggleKey then mainFrame.Visible = not mainFrame.Visible
-elseif input.KeyCode == DestroyKey then
-for _, conn in pairs(Connections) do if conn then conn:Disconnect() end end
-resetAllHitboxes()
-if PlataformaObjeto then PlataformaObjeto:Destroy() end
-if AFKPlatform then AFKPlatform:Destroy() end
-if BaconBhopMovement.mover then BaconBhopMovement.mover:Destroy() end
-toggleFreecam(false)
-screenGui:Destroy()
-end
-end)
-Connections.InputEnded = UserInputService.InputEnded:Connect(function(input, gpe)
-if input.KeyCode and BaconBhopMovement.Keys[input.KeyCode.Name] then
-BaconBhopMovement.Keys[input.KeyCode.Name] = 0
-end
-end)
+if UserInputService:IsKeyDown(Enum.Ke
